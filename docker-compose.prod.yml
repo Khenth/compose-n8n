@@ -1,0 +1,161 @@
+#  comando para correr este archivo en produccion: docker compose -f docker-compose.n8n.yml up -d
+
+version: '3.8'
+name: n8n_evolution
+
+networks:
+  backend_net:
+    external: true      # <— importante
+    name: backend_net   # <— mismo nombre que en el otro compose
+
+services:
+  n8n:
+    stdin_open: true
+    tty: true
+    container_name: n8n
+    restart: always
+    image: n8nio/n8n:2.6.3
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./../db/n8n_data:/home/node/.n8n
+    environment:
+      - NODE_ENV=production
+      - GENERIC_TIMEZONE=America/Guayaquil
+      - TZ=America/Guayaquil
+      - N8N_HOST=${N8N_HOST}
+      - WEBHOOK_URL=https://${N8N_HOST}
+      - N8N_PORT=5678
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_TASK_TIMEOUT=5400
+
+      # Configuración de la encriptación
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+      
+      # Configuración de la base de datos
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=pgbouncer
+      - DB_POSTGRESDB_PORT=6432
+      - DB_POSTGRESDB_USER=${DB_USERNAME}
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME}
+      
+      # Cola y Redis
+      # - N8N_DISABLE_EXECUTIONS=true
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_ENABLED=true 
+      - QUEUE_BULL_REDIS_HOST=redis-sarha
+      - QUEUE_BULL_REDIS_PORT=6379
+      - N8N_RUNNERS_ENABLED=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true
+
+    networks: [backend_net]   # <— conéctalo a la red
+
+
+  n8n_worker1:
+    image: n8nio/n8n:2.6.3
+    restart: always
+    environment:
+      # Configuración de la base de datos
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=pgbouncer
+      - DB_POSTGRESDB_PORT=6432
+      - DB_POSTGRESDB_USER=${DB_USERNAME}
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME}
+      - NODE_ENV=production
+      - N8N_LOG_LEVEL=debug
+      
+      - N8N_RUNNERS_TASK_TIMEOUT=5400
+
+      # Configuración de la cola y Redis
+      - N8N_EXECUTIONS_PROCESS=worker
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_ENABLED=true 
+      - QUEUE_BULL_REDIS_HOST=redis-sarha 
+      - QUEUE_BULL_REDIS_PORT=6379
+      - N8N_WORKER_CONCURRENCY=10 
+      - N8N_RUNNERS_ENABLED=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true 
+
+      # Configuración de la encriptación
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+
+    # volumes:
+    #   - ./n8n_data:/home/node/.n8n
+    depends_on:
+      n8n: 
+        condition: service_started
+    networks: [backend_net] 
+    command: worker
+
+  n8n_worker2:
+    image: n8nio/n8n:2.6.3
+    restart: always
+    environment:
+      # Configuración de la base de datos
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=pgbouncer
+      - DB_POSTGRESDB_PORT=6432
+      - DB_POSTGRESDB_USER=${DB_USERNAME}
+      - DB_POSTGRESDB_PASSWORD=${DB_PASSWORD}
+      - DB_POSTGRESDB_DATABASE=${N8N_DB_NAME}
+      - NODE_ENV=production
+      - N8N_LOG_LEVEL=debug
+
+      - N8N_RUNNERS_TASK_TIMEOUT=5400
+
+      # Configuración de la cola y Redis
+      - N8N_EXECUTIONS_PROCESS=worker
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_ENABLED=true 
+      - QUEUE_BULL_REDIS_HOST=redis-sarha 
+      - QUEUE_BULL_REDIS_PORT=6379
+      - N8N_WORKER_CONCURRENCY=10 
+      - N8N_RUNNERS_ENABLED=true
+      - OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS=true 
+
+      # Configuración de la encriptación
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+
+    # volumes:
+    #   - ./n8n_data:/home/node/.n8n
+    depends_on:
+      n8n: 
+        condition: service_started
+    networks: [backend_net] 
+    command: worker
+
+  evolutionapi:
+    container_name: evolutionapi
+    image: atendai/evolution-api:v2.1.1
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTHENTICATION_API_KEY=${AUTHENTICATION_API_KEY}
+
+      # Si Evolution usará **Postgres** a través de PgBouncer:
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${DB_USERNAME}:${DB_PASSWORD}@pgbouncer:6432/${DB_NAME}
+      - CONFIG_SESSION_PHONE_VERSION=${CONFIG_SESSION_PHONE_VERSION}
+      # (Alternativa: directo a Postgres sin PgBouncer)
+      # - DATABASE_CONNECTION_URI=postgresql://${DB_USERNAME}:${DB_PASSWORD}@merp-db:5432/${DB_NAME}
+
+      # Redis de tu infra:
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis-sarha:6379
+      - CACHE_REDIS_PREFIX_KEY=evo
+      - CACHE_REDIS_SAVE_INSTANCES=true
+
+      # Cache local opcional
+      - CACHE_LOCAL_ENABLED=true
+    volumes:
+      - ./../db/evolution_api:/evolution/instances
+    networks: [backend_net]   # <— conéctalo a la red
