@@ -159,3 +159,14 @@ services:
     volumes:
       - ./../db/evolution_api:/evolution/instances
     networks: [backend_net]   # <— conéctalo a la red
+
+  # ✅ NUEVO: GOTENBERG para convertir HTML → PDF (Chromium)
+  gotenberg:
+    container_name: gotenberg
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    # No necesitas exponer puertos si solo lo usará n8n dentro de la red.
+    # Si quieres probar desde tu PC, descomenta:
+    # ports:
+    #   - "3005:3000"
+    networks: [backend_net]
